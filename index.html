@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ניהול מכשירים – טכנודע</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💻</text></svg>">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">💻</div>
+      <div>
+        <h1>ניהול מכשירים</h1>
+        <div class="sub" id="orgName">טכנודע</div>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button class="btn ghost icon" id="themeBtn" title="מצב כהה/בהיר" aria-label="מצב כהה/בהיר">🌓</button>
+      <button class="btn ghost icon" id="refreshBtn" title="רענון" aria-label="רענון">⟳</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="setup-warn card" id="setupWarn" hidden>
+      ⚠ השמירה עוד לא מוגדרת: צריך להוסיף <code>apiUrl</code> בקובץ <code>data/config.json</code> (ראו README).
+    </div>
+
+    <section class="summary" id="summary"></section>
+
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-tab="laptops" role="tab">💻 מחשבים <span class="count" id="countLaptops">0</span></button>
+      <button class="tab" data-tab="tablets" role="tab">📱 טאבלטים <span class="count" id="countTablets">0</span></button>
+    </nav>
+
+    <section class="toolbar">
+      <input type="search" id="search" placeholder="חיפוש לפי מספר, מספר סידורי, דגם, מיקום או הערה…">
+      <select id="filter">
+        <option value="all">הכל</option>
+        <option value="ok">תקינים</option>
+        <option value="broken">תקולים + בתיקון</option>
+        <option value="faulty">תקולים</option>
+        <option value="repair">בתיקון</option>
+        <option value="update">צריכים עדכון</option>
+        <option value="retired">הוסרו מהמלאי</option>
+      </select>
+      <button class="btn ghost" id="exportBtn">⬇ ייצוא לאקסל</button>
+      <button class="btn primary" id="addBtn">＋ הוסף מכשיר</button>
+    </section>
+
+    <section class="card table-wrap">
+      <table class="devices">
+        <thead>
+          <tr>
+            <th>מס'</th>
+            <th>מספר סידורי (יצרן)</th>
+            <th>דגם</th>
+            <th>מצב</th>
+            <th>מערכת</th>
+            <th>עדכון</th>
+            <th>מיקום</th>
+            <th>הערות</th>
+            <th>עודכן</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+      <div class="empty" id="empty" hidden></div>
+    </section>
+
+    <footer class="foot muted" id="foot"></footer>
+  </main>
+
+  <dialog id="deviceDlg">
+    <form method="dialog" id="deviceForm">
+      <h2 id="dlgTitle">הוספת מכשיר</h2>
+      <div class="grid2">
+        <label>סוג
+          <select name="kind">
+            <option value="laptops">💻 מחשב</option>
+            <option value="tablets">📱 טאבלט</option>
+          </select>
+        </label>
+        <label>מספר פנימי
+          <input name="id" type="number" min="1" required>
+        </label>
+        <label class="span2">מספר סידורי של היצרן
+          <input name="serial" required autocomplete="off" dir="ltr">
+        </label>
+        <label>יצרן <input name="manufacturer" autocomplete="off" list="makers"></label>
+        <label>דגם <input name="model" autocomplete="off"></label>
+        <label>מצב
+          <select name="status">
+            <option value="ok">✅ תקין</option>
+            <option value="faulty">❌ תקול</option>
+            <option value="repair">🔧 בתיקון</option>
+          </select>
+        </label>
+        <label>מיקום / אחראי <input name="location" autocomplete="off"></label>
+        <label>מערכת הפעלה <input name="os" autocomplete="off" list="systems" placeholder="Windows 11 / Android 14"></label>
+        <label>עדכון מערכת
+          <select name="update">
+            <option value="">— לא נבדק —</option>
+            <option value="ok">✓ מעודכן</option>
+            <option value="needed">⚠ צריך עדכון</option>
+          </select>
+        </label>
+        <label class="span2">הערות <textarea name="notes" rows="3"></textarea></label>
+      </div>
+      <div class="dlg-actions">
+        <button type="button" class="btn danger" id="retireBtn" hidden>הסר מהמלאי</button>
+        <button type="button" class="btn danger ghost" id="deleteBtn" hidden>מחק לצמיתות</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn ghost" id="cancelBtn">ביטול</button>
+        <button type="submit" class="btn primary">שמירה</button>
+      </div>
+    </form>
+  </dialog>
+
+  <datalist id="makers">
+    <option value="Lenovo"><option value="HP"><option value="Dell"><option value="Asus"><option value="Acer">
+    <option value="Microsoft"><option value="Samsung"><option value="Apple"><option value="Xiaomi">
+  </datalist>
+  <datalist id="systems">
+    <option value="Windows 11"><option value="Windows 10">
+    <option value="Android 15"><option value="Android 14"><option value="Android 13"><option value="Android 12"><option value="Android 11">
+    <option value="iPadOS"><option value="ChromeOS">
+  </datalist>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="assets/app.js"></script>
+</body>
+</html>
