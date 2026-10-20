@@ -27,7 +27,12 @@
 
   <main class="container">
     <div class="setup-warn card" id="setupWarn" hidden>
-      ⚠ השמירה עוד לא מוגדרת: צריך להוסיף <code>apiUrl</code> בקובץ <code>data/config.json</code> (ראו README).
+      ⚠ השמירה כרגע מקומית: הנתונים נשמרים רק בדפדפן הזה, במחשב הזה. כדאי לייצא לאקסל מדי פעם כגיבוי.
+      כשיוגדר <code>apiUrl</code> בקובץ <code>data/config.json</code> (ראו README), יופיע כפתור להעלאת הנתונים לשרת.
+    </div>
+    <div class="setup-warn card" id="localSync" hidden>
+      בדפדפן הזה שמורים <b id="localSyncCount">0</b> מכשירים שעוד לא הועלו לשרת.
+      <button class="btn primary small" id="localSyncBtn">⬆ העלה לשרת</button>
     </div>
 
     <section class="summary" id="summary"></section>
@@ -134,6 +139,6 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-  <script src="assets/app.js"></script>
+  <script src="assets/app.js?v=3"></script>
 </body>
 </html>
