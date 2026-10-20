@@ -182,7 +182,7 @@ function matches(d) {
   const q = state.search.trim().toLowerCase();
   if (!q) return true;
   if (/^#?\d+$/.test(q)) return String(d.id) === q.replace('#', '') || String(d.serial).toLowerCase().includes(q);
-  return [d.serial, d.manufacturer, d.model, d.location, d.notes, d.os]
+  return [d.serial, d.manufacturer, d.model, d.notes, d.os]
     .some((v) => String(v ?? '').toLowerCase().includes(q));
 }
 
@@ -204,7 +204,6 @@ function renderTable() {
         <td data-label="מצב"><button class="badge ${st.cls}" data-act="status" data-id="${d.id}" title="לחיצה לשינוי מצב">${st.icon} ${st.label}</button>${d.retired ? ' <span class="badge info">הוסר</span>' : ''}</td>
         <td data-label="מערכת" class="os">${esc(d.os)}</td>
         <td data-label="עדכון"><span class="badge ${up.cls}">${up.label}</span></td>
-        <td data-label="מיקום">${esc(d.location)}</td>
         <td data-label="הערות" class="notes">${esc(d.notes)}</td>
         <td data-label="עודכן" class="muted">${esc(fmtDate(d.updatedAt || d.addedAt))}</td>
         <td><button class="btn small ghost" data-act="edit" data-id="${d.id}">✏️ עריכה</button></td>
@@ -250,7 +249,7 @@ async function cycleStatus(kind, id) {
   }
 }
 
-const FIELDS = ['serial', 'manufacturer', 'model', 'location', 'notes', 'os'];
+const FIELDS = ['serial', 'manufacturer', 'model', 'notes', 'os'];
 
 function openDeviceDialog(ref) {
   const form = $('#deviceForm');
@@ -348,10 +347,10 @@ async function deleteDevice() {
 /* ---------- Export ---------- */
 function exportCsv() {
   const kind = state.tab;
-  const head = ['מספר', 'מספר סידורי', 'יצרן', 'דגם', 'מצב', 'מערכת', 'עדכון', 'מיקום', 'הערות', 'עודכן', 'הוסר'];
+  const head = ['מספר', 'מספר סידורי', 'יצרן', 'דגם', 'מצב', 'מערכת', 'עדכון', 'הערות', 'עודכן', 'הוסר'];
   const lines = visibleRows(kind).map((d) => [
     d.id, d.serial, d.manufacturer, d.model, (STATUS[d.status] || STATUS.ok).label, d.os,
-    (UPDATE[d.update || ''] || UPDATE['']).label.replace(/^[⚠✓]\s*/, ''), d.location, d.notes,
+    (UPDATE[d.update || ''] || UPDATE['']).label.replace(/^[⚠✓]\s*/, ''), d.notes,
     fmtDate(d.updatedAt || d.addedAt), d.retired ? 'כן' : '',
   ]);
   const csv = [head, ...lines].map((r) => r.map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\r\n');
@@ -361,6 +360,119 @@ function exportCsv() {
   a.download = `${KINDS[kind].many}-${today()}.csv`;
   a.click();
   URL.revokeObjectURL(a.href);
+}
+
+/* ---------- Import ---------- */
+// Column headers accepted on import (the export's headers, plus a few common alternatives).
+const IMPORT_COLS = {
+  id: ['מספר', 'מס\'', 'מספר פנימי', 'id'],
+  serial: ['מספר סידורי', 'מספר סידורי (יצרן)', 'סידורי', 's/n', 'sn', 'serial'],
+  manufacturer: ['יצרן', 'manufacturer'],
+  model: ['דגם', 'model'],
+  status: ['מצב', 'status'],
+  os: ['מערכת', 'מערכת הפעלה', 'os'],
+  update: ['עדכון', 'עדכון מערכת', 'update'],
+  notes: ['הערות', 'notes'],
+  retired: ['הוסר', 'retired'],
+};
+
+let xlsxLib;
+function loadXlsx() {
+  xlsxLib ??= new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.onload = () => resolve(window.XLSX);
+    s.onerror = () => { xlsxLib = null; reject(new Error('טעינת רכיב האקסל נכשלה')); };
+    document.head.appendChild(s);
+  });
+  return xlsxLib;
+}
+
+async function readSheetRows(file) {
+  const XLSX = await loadXlsx();
+  const buf = await file.arrayBuffer();
+  let wb;
+  if (/\.csv$/i.test(file.name)) {
+    // Excel saves Hebrew CSV as UTF-8 or Windows-1255, depending on the option chosen.
+    let text;
+    try { text = new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch { text = new TextDecoder('windows-1255').decode(buf); }
+    wb = XLSX.read(text.replace(/^﻿/, ''), { type: 'string', raw: true });
+  } else {
+    wb = XLSX.read(buf, { type: 'array' });
+  }
+  return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '', raw: false });
+}
+
+function parseImportRow(row, cols) {
+  const get = (f) => (cols[f] == null ? '' : String(row[cols[f]] ?? '').trim());
+  const rec = {};
+  for (const f of FIELDS) rec[f] = get(f);
+  const id = Number(get('id'));
+  if (Number.isInteger(id) && id > 0) rec.id = id;
+  const st = get('status');
+  const stKey = Object.keys(STATUS).find((k) => st && (st === k || st.includes(STATUS[k].label)));
+  if (stKey) rec.status = stKey;
+  const up = get('update');
+  if (/צריך|needed/i.test(up)) rec.update = 'needed';
+  else if (/מעודכן|^ok$/i.test(up)) rec.update = 'ok';
+  if (cols.retired != null) rec.retired = /^(כן|yes|true|1)$/i.test(get('retired'));
+  return rec;
+}
+
+async function importFile(file) {
+  const kind = state.tab;
+  let rows;
+  try {
+    rows = await readSheetRows(file);
+  } catch (e) {
+    return toast(`קריאת הקובץ נכשלה: ${e.message}`, true);
+  }
+  const headRow = rows.findIndex((r) => r.some((v) => String(v).trim()));
+  if (headRow < 0) return toast('הקובץ ריק', true);
+  const cols = {};
+  rows[headRow].forEach((h, i) => {
+    const key = String(h).trim().toLowerCase();
+    const f = Object.keys(IMPORT_COLS).find((k) => IMPORT_COLS[k].includes(key));
+    if (f && cols[f] == null) cols[f] = i;
+  });
+  if (cols.serial == null) return toast('לא נמצאה עמודת "מספר סידורי" בשורת הכותרות', true);
+
+  const recs = rows.slice(headRow + 1).map((r) => parseImportRow(r, cols)).filter((r) => r.serial);
+  if (!recs.length) return toast('לא נמצאו שורות עם מספר סידורי', true);
+  const other = recs.map((r) => findSerial(r.serial)).find((hit) => hit && hit.kind !== kind);
+  if (other) return toast(`המספר הסידורי ${other.serial} רשום כבר ב${KINDS[other.kind].many} (#${other.id}). בדקו שאתם בלשונית הנכונה.`, true);
+  if (!confirm(`לייבא ${recs.length} שורות ל${KINDS[kind].many}? מכשירים שהמספר הסידורי שלהם כבר רשום יתעדכנו.`)) return;
+
+  let added = 0, updated = 0;
+  try {
+    await mutateDevices((data) => {
+      added = 0; updated = 0;
+      const list = data[kind];
+      const seen = new Set();
+      for (const rec of recs) {
+        const key = normSerial(rec.serial);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const existing = list.find((x) => normSerial(x.serial) === key);
+        // Empty cells don't overwrite existing values.
+        const fields = Object.fromEntries(Object.entries(rec).filter(([, v]) => v !== ''));
+        if (existing) {
+          if (fields.id && fields.id !== existing.id && list.some((x) => x.id === fields.id)) delete fields.id;
+          Object.assign(existing, fields, { updatedAt: today() });
+          updated++;
+        } else {
+          const id = fields.id && !list.some((x) => x.id === fields.id)
+            ? fields.id : list.reduce((m, d) => Math.max(m, Number(d.id) || 0), 0) + 1;
+          list.push({ status: 'ok', update: '', retired: false, ...fields, id, addedAt: today(), updatedAt: today() });
+          added++;
+        }
+      }
+      list.sort((a, b) => a.id - b.id);
+    }, `ייבוא ${KINDS[kind].many} מקובץ ${file.name}`.slice(0, 200));
+    toast(`יובא ✓ נוספו ${added}, עודכנו ${updated}`);
+  } catch (e) {
+    toast(`הייבוא נכשל: ${e.message}`, true);
+  }
 }
 
 /* ---------- Theme ---------- */
@@ -382,6 +494,12 @@ $('#search').oninput = (e) => { state.search = e.target.value; renderTable(); };
 $('#filter').onchange = (e) => setFilter(e.target.value);
 $('#addBtn').onclick = () => openDeviceDialog(null);
 $('#exportBtn').onclick = exportCsv;
+$('#importBtn').onclick = () => $('#importFile').click();
+$('#importFile').onchange = (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (file) importFile(file);
+};
 $('#themeBtn').onclick = toggleTheme;
 $('#refreshBtn').onclick = () => loadAll().then(() => toast('רוענן ✓'));
 $('#deviceForm').onsubmit = saveDevice;
