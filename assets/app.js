@@ -71,8 +71,36 @@ async function api(body) {
 
 const readDevices = () => api({ action: 'read' });
 
+/* ---------- Local storage (until apiUrl is set up) ---------- */
+const LOCAL_KEY = 'technoda.devices';
+
+function localDevices() {
+  try {
+    const d = JSON.parse(storageGet(LOCAL_KEY));
+    return d && Array.isArray(d.laptops) && Array.isArray(d.tablets) ? d : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveLocal(data) {
+  try {
+    localStorage.setItem(LOCAL_KEY, JSON.stringify(data));
+  } catch {
+    throw new Error('הדפדפן חוסם שמירה מקומית');
+  }
+}
+
 /** Read devices.json fresh, apply `mutate`, write it back. Retries on concurrent edits. */
 async function mutateDevices(mutate, message) {
+  if (!state.config.apiUrl) {
+    const data = JSON.parse(JSON.stringify(state.devices));
+    mutate(data);
+    saveLocal(data);
+    state.devices = data;
+    render();
+    return;
+  }
   for (let attempt = 0; attempt < 3; attempt++) {
     const { data, sha } = await readDevices();
     data.laptops ??= [];
@@ -106,14 +134,49 @@ async function loadAll() {
   $('#setupWarn').hidden = !!state.config.apiUrl;
 
   state.devices = null;
+  const local = localDevices();
   if (state.config.apiUrl) {
     // Read through the API: the GitHub Pages copy can lag a minute or two after a save.
     try { state.devices = (await readDevices()).data; } catch (e) { toast(`טעינה עדכנית נכשלה (${e.message})`, true); }
+  } else {
+    state.devices = local;
   }
   state.devices ??= await fetchJson('data/devices.json', {});
   state.devices.laptops ??= [];
   state.devices.tablets ??= [];
+  const localCount = local ? local.laptops.length + local.tablets.length : 0;
+  $('#localSync').hidden = !(state.config.apiUrl && localCount);
+  $('#localSyncCount').textContent = localCount;
   render();
+}
+
+/** Move devices saved in this browser to the shared file, once apiUrl is set. */
+async function uploadLocal() {
+  const local = localDevices();
+  if (!local) return;
+  let added = 0, skipped = 0;
+  try {
+    await mutateDevices((data) => {
+      added = 0; skipped = 0;
+      const serials = new Set(['laptops', 'tablets'].flatMap((k) => data[k].map((x) => normSerial(x.serial))));
+      for (const kind of ['laptops', 'tablets']) {
+        for (const d of local[kind]) {
+          if (serials.has(normSerial(d.serial))) { skipped++; continue; }
+          serials.add(normSerial(d.serial));
+          const id = data[kind].some((x) => x.id === d.id)
+            ? data[kind].reduce((m, x) => Math.max(m, Number(x.id) || 0), 0) + 1 : d.id;
+          data[kind].push({ ...d, id });
+          added++;
+        }
+        data[kind].sort((a, b) => a.id - b.id);
+      }
+    }, 'העלאת מכשירים שנשמרו מקומית');
+    try { localStorage.removeItem(LOCAL_KEY); } catch { /* ignore */ }
+    $('#localSync').hidden = true;
+    toast(`הועלו ${added} מכשירים לשרת ✓` + (skipped ? ` (${skipped} כבר היו רשומים)` : ''));
+  } catch (e) {
+    toast(`ההעלאה נכשלה: ${e.message}`, true);
+  }
 }
 
 /* ---------- Helpers ---------- */
@@ -494,7 +557,8 @@ $('#search').oninput = (e) => { state.search = e.target.value; renderTable(); };
 $('#filter').onchange = (e) => setFilter(e.target.value);
 $('#addBtn').onclick = () => openDeviceDialog(null);
 $('#exportBtn').onclick = exportCsv;
-$('#importBtn').onclick = () => $('#importFile').click();
+$('#localSyncBtn').onclick = uploadLocal;
+$('#importBtn').onclick =() => $('#importFile').click();
 $('#importFile').onchange = (e) => {
   const file = e.target.files[0];
   e.target.value = '';
