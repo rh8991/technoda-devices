@@ -38,7 +38,7 @@
     </nav>
 
     <section class="toolbar">
-      <input type="search" id="search" placeholder="חיפוש לפי מספר, מספר סידורי, דגם, מיקום או הערה…">
+      <input type="search" id="search" placeholder="חיפוש לפי מספר, מספר סידורי, דגם או הערה…">
       <select id="filter">
         <option value="all">הכל</option>
         <option value="ok">תקינים</option>
@@ -48,6 +48,8 @@
         <option value="update">צריכים עדכון</option>
         <option value="retired">הוסרו מהמלאי</option>
       </select>
+      <button class="btn ghost" id="importBtn">⬆ ייבוא מאקסל</button>
+      <input type="file" id="importFile" accept=".xlsx,.xls,.csv" hidden>
       <button class="btn ghost" id="exportBtn">⬇ ייצוא לאקסל</button>
       <button class="btn primary" id="addBtn">＋ הוסף מכשיר</button>
     </section>
@@ -62,7 +64,6 @@
             <th>מצב</th>
             <th>מערכת</th>
             <th>עדכון</th>
-            <th>מיקום</th>
             <th>הערות</th>
             <th>עודכן</th>
             <th></th>
@@ -101,7 +102,6 @@
             <option value="repair">🔧 בתיקון</option>
           </select>
         </label>
-        <label>מיקום / אחראי <input name="location" autocomplete="off"></label>
         <label>מערכת הפעלה <input name="os" autocomplete="off" list="systems" placeholder="Windows 11 / Android 14"></label>
         <label>עדכון מערכת
           <select name="update">
